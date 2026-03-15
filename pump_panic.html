@@ -1,0 +1,1579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pump Panic</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: #1a2332;
+      color: #e0e8f0;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    #app {
+      width: 100%;
+      max-width: 600px;
+      padding: 12px;
+    }
+
+    .screen { display: none; }
+    .screen.active { display: block; }
+
+    /* ── START SCREEN ── */
+    #start-screen { text-align: center; }
+
+    #start-screen h1 {
+      font-size: 2.6rem; font-weight: 800; color: #4fc3f7;
+      letter-spacing: 2px; margin-bottom: 6px;
+    }
+    #start-screen .subtitle { color: #90a4ae; font-size: 1rem; margin-bottom: 32px; }
+
+    .mode-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+    .mode-card {
+      background: #243447; border: 2px solid #2e4057; border-radius: 12px;
+      padding: 24px 16px; cursor: pointer; transition: border-color 0.2s, transform 0.1s;
+    }
+    .mode-card:hover { border-color: #4fc3f7; transform: translateY(-2px); }
+    .mode-card h2 { font-size: 1.1rem; margin-bottom: 10px; }
+    .mode-card.reactive h2 { color: #ef5350; }
+    .mode-card.pro h2      { color: #66bb6a; }
+    .mode-card p { font-size: 0.82rem; color: #90a4ae; line-height: 1.5; }
+    .mode-card ul { list-style: none; margin-top: 10px; text-align: left; }
+    .mode-card ul li { font-size: 0.78rem; color: #b0bec5; padding: 2px 0; }
+    .mode-card ul li::before { content: '• '; color: #546e7a; }
+
+    /* ── GAME SCREEN ── */
+    #game-screen header {
+      display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;
+    }
+    #game-screen header h1 { font-size: 1.2rem; color: #4fc3f7; font-weight: 700; }
+
+    #mode-label {
+      font-size: 0.7rem; padding: 2px 8px; border-radius: 20px;
+      font-weight: 600; text-transform: uppercase; letter-spacing: 1px;
+    }
+    #mode-label.reactive { background: #b71c1c; color: #ffcdd2; }
+    #mode-label.pro      { background: #1b5e20; color: #c8e6c9; }
+
+    #timer-bar-wrap {
+      background: #2e4057; border-radius: 6px; height: 8px;
+      margin-bottom: 8px; overflow: hidden;
+    }
+    #timer-bar { height: 100%; background: #4fc3f7; transition: width 1s linear, background 0.5s; width: 100%; }
+
+    .stats-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 6px; }
+    .stat-box { background: #243447; border-radius: 7px; padding: 6px 6px; text-align: center; }
+    .stat-box .label { font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.5px; color: #607d8b; margin-bottom: 2px; }
+    .stat-box .value { font-size: 1.15rem; font-weight: 700; }
+    .stat-box.time     .value { color: #4fc3f7; }
+    .stat-box.people   .value { color: #ef9a9a; }
+    .stat-box.budget   .value { color: #a5d6a7; }
+    .stat-box.downtime .value { color: #ffcc80; }
+
+    .resource-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px; }
+    .resource-box {
+      background: #243447; border: 1px solid #2e4057; border-radius: 7px;
+      padding: 5px 10px; display: flex; align-items: center; gap: 8px;
+    }
+    .resource-box .icon { font-size: 1.2rem; }
+    .resource-box .info .label { font-size: 0.58rem; text-transform: uppercase; color: #607d8b; }
+    .resource-box .info .count { font-size: 1rem; font-weight: 700; color: #e0e8f0; }
+
+    /* ── PLAY AREA (map + pump grid + sprite layer) ── */
+    #play-area {
+      position: relative; width: 100%; aspect-ratio: 16 / 9;
+      max-height: 38vh;
+      overflow: hidden; border-radius: 10px; margin-bottom: 8px;
+    }
+
+    #map-bg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .pump-grid { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    .pump {
+      position: absolute; width: 52px; transform: translate(-50%, -50%);
+      border-radius: 8px; border: 2px solid transparent; cursor: default;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 1px;
+      transition: transform 0.1s, box-shadow 0.2s;
+      user-select: none; padding: 3px;
+    }
+    .pump-svg-wrap { width: 58%; flex-shrink: 0; }
+    .pump-svg-wrap svg { width: 100%; height: auto; display: block; }
+    .pump .pump-name {
+      font-size: 0.48rem; color: rgba(255,255,255,0.85); text-align: center;
+      line-height: 1.2; white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 48px;
+    }
+
+    .pump.working   { background: rgba(27,  94, 32,  0.82); border-color: #43a047; }
+    .pump.broken    { background: rgba(127,  0,  0,  0.88); border-color: #e53935; cursor: pointer; animation: pulse-red 1.4s infinite; }
+    .pump.repairing { background: rgba(74,  53,  0,  0.88); border-color: #ffa000; }
+
+    .pump.broken:hover { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 0 16px rgba(229,57,53,0.6); }
+
+    .pump .repair-ring {
+      display: none; position: absolute; bottom: 4px; left: 50%;
+      transform: translateX(-50%); width: calc(100% - 14px);
+      height: 4px; background: #5d4300; border-radius: 2px; overflow: hidden;
+    }
+    .pump.repairing .repair-ring { display: block; }
+    .pump .repair-fill { height: 100%; background: #ffa000; border-radius: 2px; transition: width 0.25s linear; }
+
+    /* People-without-water badge — visible only on broken pumps */
+    .pump .people-badge {
+      display: none; font-size: 0.5rem; color: #ffcdd2; font-weight: 700;
+      text-align: center; white-space: nowrap; letter-spacing: 0.2px;
+    }
+    .pump.broken .people-badge { display: block; }
+
+    /* First-break repair hint */
+    #repair-hint {
+      display: none; position: absolute; background: rgba(0,0,0,0.88);
+      color: #ffd54f; border: 1px solid #ffa000; border-radius: 6px;
+      padding: 5px 11px; font-size: 0.68rem; font-weight: 700;
+      pointer-events: none; z-index: 28; white-space: nowrap;
+      transform: translateX(-50%);
+      animation: hint-float 1.1s ease-in-out infinite;
+    }
+    #repair-hint.visible { display: block; }
+    @keyframes hint-float {
+      0%, 100% { opacity: 1;   transform: translateX(-50%) translateY(0);   }
+      50%       { opacity: 0.7; transform: translateX(-50%) translateY(-3px); }
+    }
+
+    /* Budget danger state — Reactive mode, broke and out of parts */
+    .stat-box.budget.danger .value { color: #ef5350 !important; animation: pulse-value 0.85s ease-in-out infinite; }
+    @keyframes pulse-value {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.55; }
+    }
+
+    /* Cascade crisis overlay (Reactive, >4 pumps broken) */
+    #cascade-overlay {
+      display: none; position: absolute; inset: 0; pointer-events: none;
+      border: 3px solid transparent; border-radius: 10px; z-index: 5;
+    }
+    #cascade-overlay.active {
+      display: block;
+      animation: cascade-pulse 1.2s ease-in-out infinite;
+    }
+    @keyframes cascade-pulse {
+      0%, 100% { border-color: rgba(239,83,80,0);   box-shadow: inset 0 0 0   rgba(239,83,80,0);    }
+      50%       { border-color: rgba(239,83,80,0.75); box-shadow: inset 0 0 24px rgba(239,83,80,0.18); }
+    }
+
+    @keyframes pulse-red {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0.5); }
+      50%       { box-shadow: 0 0 0 6px rgba(229,57,53,0);  }
+    }
+
+    .pump.no-resource { animation: shake 0.3s ease !important; }
+    @keyframes shake {
+      0%,  100% { transform: translate(-50%, -50%) translateX(0);    }
+      25%        { transform: translate(-50%, -50%) translateX(-4px); }
+      75%        { transform: translate(-50%, -50%) translateX(4px);  }
+    }
+
+    /* Water drop pulse on working pumps */
+    @keyframes drop-pulse {
+      0%, 100% { opacity: 1;   }
+      50%       { opacity: 0.3; }
+    }
+    .pump.working .water-drop      { animation: drop-pulse 1.1s ease-in-out infinite; }
+    .pump.working .water-drop-b    { animation: drop-pulse 1.1s ease-in-out infinite 0.55s; }
+
+    /* ── MECHANIC SPRITES ── */
+    .mechanic-sprite {
+      position: absolute;
+      font-size: 1.3rem;
+      line-height: 1;
+      transition: left 0.55s cubic-bezier(0.4, 0, 0.2, 1),
+                  top  0.55s cubic-bezier(0.4, 0, 0.2, 1);
+      pointer-events: none;
+      z-index: 20;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+    }
+    .mechanic-sprite .m-label {
+      position: absolute;
+      top: -15px; left: 50%; transform: translateX(-50%);
+      font-size: 0.58rem; font-weight: 700;
+      background: rgba(0,0,0,0.82);
+      color: #fff; padding: 2px 5px; border-radius: 3px;
+      white-space: nowrap; letter-spacing: 0.3px;
+    }
+    .mechanic-sprite .m-label.urgent {
+      background: rgba(229, 57, 53, 0.92);
+      animation: pulse-label 0.7s ease-in-out infinite;
+    }
+    @keyframes pulse-label {
+      0%, 100% { opacity: 1; transform: translateX(-50%) scale(1);   }
+      50%       { opacity: 0.7; transform: translateX(-50%) scale(1.08); }
+    }
+    .mechanic-sprite.on-mission { opacity: 0.65; }
+
+    /* ── CRISIS BANNER (Reactive mode) ── */
+    #crisis-banner {
+      display: none; position: absolute;
+      top: 50%; left: 50%; transform: translate(-50%, -50%);
+      background: rgba(140, 10, 10, 0.95); border: 2px solid #ef5350;
+      border-radius: 10px; padding: 12px 22px; text-align: center;
+      z-index: 30; pointer-events: none; min-width: 180px;
+    }
+    #crisis-banner.visible {
+      display: block;
+      animation: crisis-pop 2.8s ease forwards;
+    }
+    @keyframes crisis-pop {
+      0%   { opacity: 0; transform: translate(-50%, -44%) scale(0.82); }
+      12%  { opacity: 1; transform: translate(-50%, -50%) scale(1.04); }
+      75%  { opacity: 1; transform: translate(-50%, -50%) scale(1);    }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(1);    }
+    }
+    #crisis-banner .cb-title  { font-size: 1rem; font-weight: 800; color: #fff; letter-spacing: 0.5px; }
+    #crisis-banner .cb-detail { font-size: 0.72rem; color: #ffcdd2; margin-top: 4px; }
+
+    /* ── REPLENISHMENT BADGES (Pro mode — embedded in budget/parts boxes) ── */
+    .rep-badge {
+      display: none; font-size: 0.55rem; font-weight: 700; color: #66bb6a;
+      margin-top: 2px; letter-spacing: 0.2px;
+    }
+    .rep-badge.arriving { animation: badge-arrive 1s ease; }
+    @keyframes badge-arrive {
+      0%   { color: #66bb6a; text-shadow: none;                          }
+      25%  { color: #fff;    text-shadow: 0 0 10px rgba(102,187,106,0.9); }
+      100% { color: #66bb6a; text-shadow: none;                          }
+    }
+
+    /* ── DISPATCH PANEL ── */
+    #dispatch-panel {
+      background: #1e2d3d; border: 1px solid #2e4057;
+      border-radius: 8px; padding: 8px 10px; margin-bottom: 8px;
+    }
+    #dispatch-panel .dp-title {
+      font-size: 0.6rem; text-transform: uppercase; letter-spacing: 1px;
+      color: #546e7a; margin-bottom: 6px;
+    }
+    .dispatch-btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+
+    .dispatch-btn {
+      background: #243447; border: 1px solid #2e4057; border-radius: 6px;
+      padding: 6px 4px; text-align: center; cursor: pointer;
+      transition: border-color 0.15s, background 0.15s, opacity 0.15s;
+      color: #e0e8f0; font-family: inherit;
+    }
+    .dispatch-btn:hover:not(:disabled) { border-color: #4fc3f7; background: #2a3f54; }
+    .dispatch-btn:disabled { opacity: 0.38; cursor: not-allowed; }
+    .dispatch-btn .db-icon   { font-size: 1.1rem; margin-bottom: 2px; }
+    .dispatch-btn .db-name   { font-size: 0.68rem; font-weight: 600; color: #b0bec5; }
+    .dispatch-btn .db-detail { font-size: 0.57rem; color: #607d8b; margin-top: 1px; }
+
+    /* ── LOG ── */
+    #log {
+      background: #090f18; border: 1px solid #1e3048; border-radius: 8px;
+      height: 62px; overflow-y: auto; padding: 3px 0;
+      font-size: 0.73rem;
+      scrollbar-width: none;
+    }
+    #log::-webkit-scrollbar { display: none; }
+    #log p {
+      line-height: 1.65; padding: 1px 10px 1px 11px;
+      border-left: 3px solid #1e3048; color: #4a6070;
+    }
+    #log p.warn { color: #ff8a80; border-left-color: #ef5350; }
+    #log p.info { color: #80deea; border-left-color: #26c6da; }
+    #log p.good { color: #b9f6ca; border-left-color: #69f0ae; }
+
+    /* ── END SCREEN ── */
+    #end-screen { text-align: center; }
+    #end-screen h1 { font-size: 2rem; color: #4fc3f7; margin-bottom: 6px; }
+    #end-screen .mode-played {
+      font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px;
+      color: #607d8b; margin-bottom: 24px;
+    }
+
+    .results-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+    .result-box { background: #243447; border-radius: 10px; padding: 16px; }
+    .result-box .r-label { font-size: 0.7rem; text-transform: uppercase; color: #607d8b; margin-bottom: 6px; }
+    .result-box .r-value { font-size: 2rem; font-weight: 800; }
+    .result-box .r-note  { font-size: 0.6rem; color: #546e7a; margin-top: 4px; }
+    .result-box.repaired .r-value { color: #66bb6a; }
+    .result-box.downtime .r-value { color: #ffcc80; }
+    .result-box.without  .r-value { color: #ef5350; }
+    .result-box.uptime   .r-value { color: #4fc3f7; }
+
+    .explanation {
+      background: #1b3a2e; border: 1px solid #2e7d52; border-radius: 10px;
+      padding: 20px; margin-bottom: 24px; text-align: left;
+      line-height: 1.7; font-size: 0.88rem; color: #b2dfdb;
+    }
+    .explanation h3 { color: #80cbc4; margin-bottom: 8px; font-size: 1rem; }
+
+    /* ── CROSS-MODE COMPARISON ── */
+    #comparison-panel { margin-bottom: 20px; }
+    #comparison-panel h3 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 1px; color: #4fc3f7; margin-bottom: 10px; }
+    .compare-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .compare-col { background: #243447; border-radius: 10px; padding: 12px 14px; }
+    .compare-col.reactive { border-top: 3px solid #ef5350; }
+    .compare-col.pro      { border-top: 3px solid #66bb6a; }
+    .compare-col h4 { font-size: 0.75rem; font-weight: 700; margin-bottom: 8px; }
+    .compare-col.reactive h4 { color: #ef9a9a; }
+    .compare-col.pro      h4 { color: #a5d6a7; }
+    .compare-stat { display: flex; justify-content: space-between; align-items: center; font-size: 0.7rem; padding: 3px 0; border-bottom: 1px solid #2e4057; }
+    .compare-stat:last-child { border-bottom: none; }
+    .compare-stat .cs-label { color: #607d8b; }
+    .compare-stat .cs-value { font-weight: 700; color: #e0e8f0; }
+    .compare-stat .cs-value.winner { color: #69f0ae; }
+
+    /* ── FLOATING EVENT TEXT (on-map feedback) ── */
+    .float-text {
+      position: absolute; pointer-events: none; font-weight: 800;
+      white-space: nowrap; z-index: 40; transform: translateX(-50%);
+      animation: float-up 2s ease-out forwards;
+    }
+    @keyframes float-up {
+      0%   { opacity: 1;   transform: translateX(-50%) translateY(0);     }
+      55%  { opacity: 1;   transform: translateX(-50%) translateY(-22px); }
+      100% { opacity: 0;   transform: translateX(-50%) translateY(-38px); }
+    }
+
+    /* ── INTRO OVERLAY ── */
+    #intro-overlay {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: rgba(10, 18, 30, 0.93);
+      align-items: center; justify-content: center; padding: 16px;
+    }
+    #intro-overlay.visible { display: flex; }
+
+    .intro-card {
+      background: #1a2535; border: 1px solid #2e4057; border-radius: 14px;
+      padding: 22px 24px; max-width: 440px; width: 100%;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.65);
+    }
+    .intro-card h2 { font-size: 1.1rem; color: #ef5350; font-weight: 800; margin-bottom: 3px; }
+    .intro-sub     { font-size: 0.8rem; color: #90a4ae; margin-bottom: 14px; }
+
+    .intro-section { background: #243447; border-radius: 8px; padding: 11px 13px; margin-bottom: 10px; }
+    .intro-section-title {
+      font-size: 0.56rem; text-transform: uppercase; letter-spacing: 1px;
+      color: #546e7a; margin-bottom: 8px;
+    }
+    .intro-row { display: flex; gap: 11px; align-items: flex-start; }
+    .intro-btn-row { display: flex; gap: 11px; align-items: flex-start; margin-bottom: 7px; }
+    .intro-btn-row:last-child { margin-bottom: 0; }
+    .intro-icon { font-size: 1.25rem; flex-shrink: 0; line-height: 1.35; }
+    .intro-row  div { font-size: 0.76rem; color: #b0bec5; line-height: 1.5; }
+    .intro-btn-row div { font-size: 0.74rem; color: #b0bec5; line-height: 1.5; }
+    .intro-row strong, .intro-btn-row strong { color: #e0e8f0; }
+
+    .intro-tag {
+      display: inline-block; font-size: 0.6rem; font-weight: 700;
+      border-radius: 3px; padding: 1px 5px; margin-left: 4px; vertical-align: middle;
+    }
+    .intro-tag.free { background: #1b5e20; color: #c8e6c9; }
+    .intro-tag.cost { background: #4a1515; color: #ffcdd2; }
+
+    .intro-warning {
+      font-size: 0.72rem; color: #ffa000; text-align: center;
+      margin: 10px 0 16px; line-height: 1.5;
+    }
+    .intro-start { width: 100%; font-size: 0.95rem; padding: 11px; }
+
+    .btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+    button {
+      padding: 12px 28px; border: none; border-radius: 8px;
+      font-size: 0.9rem; font-weight: 600; cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s; font-family: inherit;
+    }
+    button:hover  { opacity: 0.88; transform: translateY(-1px); }
+    button:active { transform: translateY(0); }
+    .btn-primary { background: #0288d1; color: #fff; }
+    .btn-alt     { background: #2e4057; color: #90a4ae; }
+  </style>
+</head>
+<body>
+<div id="app">
+
+  <!-- ══ START SCREEN ══ -->
+  <div id="start-screen" class="screen active">
+    <h1>PUMP PANIC</h1>
+    <p class="subtitle">Keep water flowing for 60 days — choose your challenge</p>
+    <div class="mode-cards">
+      <div class="mode-card reactive" onclick="startGame('reactive')">
+        <h2>⚠ Reactive Mode</h2>
+        <p>No maintenance plan. You fix pumps only after they break.</p>
+        <ul>
+          <li>High break rate</li>
+          <li>Slow repairs (4 days)</li>
+          <li>2 mechanics / 4 parts / $300</li>
+          <li>Expensive supply runs</li>
+          <li>Random crises: funds diverted, parts stolen, staff sick</li>
+        </ul>
+      </div>
+      <div class="mode-card pro" onclick="startGame('pro')">
+        <h2>✓ Professional Mode</h2>
+        <p>A managed service contract. Resources arrive automatically.</p>
+        <ul>
+          <li>Low break rate</li>
+          <li>Fast repairs (2 days)</li>
+          <li>4 mechanics / 2 parts / $300</li>
+          <li>Contract payments: +$80 every 12 days</li>
+          <li>Auto parts delivery: +3 every 10 days (−$60)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ══ GAME SCREEN ══ -->
+  <div id="game-screen" class="screen">
+    <header>
+      <h1>PUMP PANIC</h1>
+      <span id="mode-label">—</span>
+    </header>
+
+    <div id="timer-bar-wrap"><div id="timer-bar"></div></div>
+
+    <div class="stats-row">
+      <div class="stat-box time">
+        <div class="label">Days Left</div>
+        <div class="value" id="stat-time">60</div>
+      </div>
+      <div class="stat-box people">
+        <div class="label">Without Water</div>
+        <div class="value" id="stat-people">0</div>
+      </div>
+      <div class="stat-box budget">
+        <div class="label">Budget</div>
+        <div class="value" id="stat-budget">$0</div>
+        <div class="rep-badge" id="rep-money-box">💳 <span id="rep-money-cd">—</span></div>
+      </div>
+      <div class="stat-box downtime">
+        <div class="label">Pump-Days Lost</div>
+        <div class="value" id="stat-downtime">0</div>
+      </div>
+    </div>
+
+    <div class="resource-row">
+      <div class="resource-box">
+        <span class="icon">👷</span>
+        <div class="info">
+          <div class="label">Mechanics Free</div>
+          <div class="count" id="res-mechanics">0</div>
+        </div>
+      </div>
+      <div class="resource-box">
+        <span class="icon">🔧</span>
+        <div class="info">
+          <div class="label">Spare Parts</div>
+          <div class="count" id="res-parts">0</div>
+          <div class="rep-badge" id="rep-parts-box">🚚 <span id="rep-parts-cd">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- map + pump grid + animated mechanic sprites share this positioned container -->
+    <div id="play-area">
+      <!-- Bird's-eye village map -->
+      <svg id="map-bg" viewBox="0 0 400 267" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
+        <defs>
+          <radialGradient id="vignette" cx="50%" cy="50%" r="70%">
+            <stop offset="60%" stop-color="transparent"/>
+            <stop offset="100%" stop-color="#1a1008" stop-opacity="0.4"/>
+          </radialGradient>
+        </defs>
+        <!-- Base terrain: sandy earth -->
+        <rect width="400" height="267" fill="#c9aa72"/>
+
+        <!-- Green fields -->
+        <ellipse cx="148" cy="52" rx="58" ry="36" fill="#7fb350" opacity="0.68"/>
+        <ellipse cx="290" cy="188" rx="62" ry="42" fill="#72a840" opacity="0.60"/>
+        <ellipse cx="158" cy="224" rx="52" ry="28" fill="#7fb350" opacity="0.62"/>
+        <ellipse cx="340" cy="52" rx="44" ry="28" fill="#8ec45a" opacity="0.55"/>
+
+        <!-- River (left ~10%) -->
+        <path d="M36,0 C42,22 30,38 37,65 C44,88 31,105 39,132 C46,155 33,172 41,197 C48,216 36,238 42,267"
+              stroke="#5d8faa" stroke-width="10" fill="none" opacity="0.75"/>
+        <path d="M36,0 C42,22 30,38 37,65 C44,88 31,105 39,132 C46,155 33,172 41,197 C48,216 36,238 42,267"
+              stroke="#9ecde4" stroke-width="4" fill="none" opacity="0.45"/>
+
+        <!-- ── Road network (dirt tracks) ── -->
+        <!-- Main east-west road at y≈155 -->
+        <path d="M0,155 Q100,150 200,155 Q300,160 400,155" stroke="#a88558" stroke-width="7" fill="none" opacity="0.85"/>
+        <!-- Main north-south spine at x≈200 -->
+        <path d="M200,0 Q205,67 200,134 Q195,200 200,267" stroke="#a88558" stroke-width="6" fill="none" opacity="0.75"/>
+        <!-- Spur: depot → School cluster (top-left) -->
+        <path d="M120,100 Q80,70 35,38" stroke="#b89868" stroke-width="3.5" fill="none" opacity="0.7"/>
+        <path d="M200,100 L120,100" stroke="#b89868" stroke-width="3" fill="none" opacity="0.65"/>
+        <!-- Spur: Church + Hilltop (top-right) -->
+        <path d="M248,38 L280,88 L352,50" stroke="#b89868" stroke-width="3.5" fill="none" opacity="0.7"/>
+        <path d="M280,88 L200,100" stroke="#b89868" stroke-width="3" fill="none" opacity="0.65"/>
+        <!-- Spur: Fish Market → Home Block (bottom-left cluster) -->
+        <path d="M89,172 L152,210" stroke="#b89868" stroke-width="3" fill="none" opacity="0.65"/>
+        <!-- Spur: Cattle Post (bottom-right) -->
+        <path d="M336,193 Q318,172 300,155" stroke="#b89868" stroke-width="3" fill="none" opacity="0.65"/>
+
+        <!-- Road lane markings (faint dashes on main roads) -->
+        <path d="M0,155 Q100,150 200,155 Q300,160 400,155"
+              stroke="#c4a870" stroke-width="1.5" fill="none" stroke-dasharray="12,10" opacity="0.5"/>
+
+        <!-- ── Landmark buildings ── -->
+        <!-- School (top-left, ~32,37) -->
+        <rect x="25" y="29" width="14" height="12" rx="2" fill="#d49a60"/>
+        <polygon points="32,23 39,29 25,29" fill="#b87840"/>
+        <!-- Clinic (~72,75) — white cross roof -->
+        <rect x="65" y="68" width="14" height="12" rx="2" fill="#e8e4d8"/>
+        <rect x="71" y="65" width="3" height="7" fill="#e05050"/>
+        <rect x="68" y="68" width="9" height="3" fill="#e05050"/>
+        <!-- Church (~248,37) -->
+        <rect x="241" y="30" width="14" height="14" rx="1" fill="#d8ceac"/>
+        <polygon points="248,22 255,30 241,30" fill="#bca870"/>
+        <rect x="246" y="36" width="4" height="8" rx="1" fill="#8a6c38"/>
+        <!-- Market (~192,94) — open stalls -->
+        <rect x="183" y="86" width="18" height="14" rx="2" fill="#e8c870"/>
+        <rect x="181" y="84" width="22" height="5" rx="1" fill="#c8a040"/>
+        <!-- Small huts scattered -->
+        <circle cx="90" cy="60" r="5" fill="#c8906a" opacity="0.6"/>
+        <circle cx="310" cy="130" r="4" fill="#c89060" opacity="0.55"/>
+        <circle cx="240" cy="200" r="4" fill="#c89060" opacity="0.55"/>
+
+        <!-- ── Workshop / Depot (~200,155) ── -->
+        <!-- Building shadow -->
+        <rect x="186" y="148" width="30" height="22" rx="3" fill="#5a4025" opacity="0.35"/>
+        <!-- Main building -->
+        <rect x="184" y="144" width="30" height="22" rx="3" fill="#8b6c42"/>
+        <!-- Roof ridge -->
+        <rect x="182" y="140" width="34" height="7" rx="2" fill="#6b5030"/>
+        <!-- Chimney -->
+        <rect x="207" y="132" width="5" height="12" rx="1" fill="#4e3820"/>
+        <!-- Chimney smoke (tiny circles) -->
+        <circle cx="209" cy="130" r="2.5" fill="#aaa" opacity="0.3"/>
+        <circle cx="211" cy="127" r="2" fill="#aaa" opacity="0.2"/>
+        <!-- Double doors -->
+        <rect x="189" y="152" width="8" height="14" rx="1" fill="#4e3820"/>
+        <rect x="199" y="152" width="8" height="14" rx="1" fill="#4e3820"/>
+        <rect x="193" y="153" width="1.5" height="12" fill="#6b5030"/>
+        <!-- WORKSHOP label -->
+        <text x="199" y="139" text-anchor="middle" font-size="5.5" fill="#e8cc88"
+              font-family="'Segoe UI',Arial,sans-serif" font-weight="700" letter-spacing="0.5">WORKSHOP</text>
+        <!-- Depot icon -->
+        <circle cx="199" cy="148" r="2" fill="#ffa020" opacity="0.8"/>
+
+        <!-- Subtle vignette overlay -->
+        <rect width="400" height="267" fill="url(#vignette)"/>
+      </svg>
+
+      <div class="pump-grid" id="pump-grid"></div>
+      <div id="cascade-overlay"></div>
+      <div id="repair-hint"></div>
+      <div id="crisis-banner">
+        <div class="cb-title"  id="crisis-title"></div>
+        <div class="cb-detail" id="crisis-detail"></div>
+      </div>
+    </div>
+
+    <div id="dispatch-panel">
+      <div class="dp-title">Dispatch a mechanic on a run</div>
+      <div class="dispatch-btns">
+        <button class="dispatch-btn" id="btn-money" onclick="dispatchMission('money')" disabled>
+          <div class="db-icon">💰</div>
+          <div class="db-name">Collect Funding</div>
+          <div class="db-detail" id="dd-money">…</div>
+        </button>
+        <button class="dispatch-btn" id="btn-parts" onclick="dispatchMission('parts')" disabled>
+          <div class="db-icon">📦</div>
+          <div class="db-name">Fetch Parts</div>
+          <div class="db-detail" id="dd-parts">…</div>
+        </button>
+        <button class="dispatch-btn" id="btn-recruit" onclick="dispatchMission('recruit')" disabled>
+          <div class="db-icon">🤝</div>
+          <div class="db-name">Recruit Help</div>
+          <div class="db-detail" id="dd-recruit">…</div>
+        </button>
+      </div>
+    </div>
+
+    <div id="log"></div>
+  </div>
+
+  <!-- ══ END SCREEN ══ -->
+  <div id="end-screen" class="screen">
+    <h1>Round Over</h1>
+    <p class="mode-played" id="end-mode-label">—</p>
+    <div class="results-grid">
+      <div class="result-box repaired">
+        <div class="r-label">Pumps Repaired</div>
+        <div class="r-value" id="end-repaired">0</div>
+      </div>
+      <div class="result-box downtime">
+        <div class="r-label">Pump-Days Lost</div>
+        <div class="r-value" id="end-downtime">0</div>
+      </div>
+      <div class="result-box without">
+        <div class="r-label">Peak People Without Water</div>
+        <div class="r-value" id="end-without">0</div>
+        <div class="r-note">250 people assumed per pump</div>
+      </div>
+      <div class="result-box uptime">
+        <div class="r-label">Network Uptime</div>
+        <div class="r-value" id="end-uptime">0%</div>
+      </div>
+    </div>
+    <div id="comparison-panel"></div>
+    <div class="explanation" id="end-explanation"></div>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="startGame('reactive')">Try Reactive</button>
+      <button class="btn-primary" onclick="startGame('pro')">Try Professional</button>
+      <button class="btn-alt" onclick="showScreen('start-screen')">Main Menu</button>
+    </div>
+  </div>
+
+<!-- ══ INTRO OVERLAY (content set by JS per mode) ══ -->
+<div id="intro-overlay">
+  <div class="intro-card" id="intro-content"></div>
+</div>
+
+</div>
+<script>
+// ── CONFIG ────────────────────────────────────────────────────────────────────
+const MODES = {
+  reactive: {
+    label:          'Reactive Mode',
+    breakInterval:  3500,
+    repairTime:     4000,
+    startMechanics: 2,
+    parts:          4,
+    budget:         300,
+    partsCost:      80,   // cost to dispatch a parts run
+    peoplePerPump:  250,
+    crisisInterval: 18000, // a crisis strikes every 18–26 real seconds (days)
+    crises: [
+      { title: '⚠ Funds Diverted!',
+        detail: 'District budget raided — $80 gone',
+        apply:  s => { s.budget = Math.max(0, s.budget - 80); } },
+      { title: '⚠ Parts Go Missing!',
+        detail: 'Store break-in — lost 1 spare part',
+        apply:  s => { s.parts  = Math.max(0, s.parts  - 1);  } },
+      { title: '⚠ Cascade Failure!',
+        detail: 'Stress on the system — another pump breaks',
+        apply:  ()  => breakRandomPump() },
+      { title: '⚠ Mechanic Off Sick!',
+        detail: 'Short-staffed for 5 days — 1 mechanic unavailable',
+        apply:  s => sidelineMechanic(5000) },
+    ],
+    missions: {
+      money:   { reward: 120, timeMin: 3000, timeMax: 7000,  label: '+$120 · 3–7 days'           },
+      parts:   { reward: 2,   timeMin: 2000, timeMax: 4000,  label: '-$80 · 2–4 days → +2 parts' },
+      recruit: { reward: 1,   timeMin: 12000, timeMax: 18000, label: '+1 mech · 12–18 days'       },
+    },
+  },
+  pro: {
+    label:          'Professional Mode',
+    breakInterval:  7000,
+    repairTime:     2000,
+    startMechanics: 4,
+    parts:          2,    // lean start — deliveries arrive every 10 days
+    budget:         300,  // contract payments in, delivery costs out — roughly balanced
+    partsCost:      60,
+    peoplePerPump:  250,
+    autoMoney: { interval: 12000, reward: 80, msg: '💳 Contract payment: +$80'         },
+    autoParts: { interval: 10000, reward: 3,  cost: 60, msg: '🚚 Parts delivery: +3 (−$60)' },
+    missions: {
+      // money and recruit are automated — mechanics only do express parts orders
+      parts: { reward: 3, timeMin: 2000, timeMax: 3000, label: '-$60 · 2–3 days → +3 parts' },
+    },
+  },
+};
+
+const TOTAL_PUMPS    = 12;
+const ROUND_DURATION = 60;
+const SPRITE_HALF    = 11; // px — half of 1.3rem emoji for centering
+
+const PUMP_LOCATIONS = [
+  { x:  8, y: 14, name: 'Mwanga School'  },
+  { x: 18, y: 28, name: 'North Clinic'   },
+  { x: 10, y: 48, name: 'River Camp'     },
+  { x: 22, y: 64, name: 'Fishers Qtr'   },
+  { x: 35, y: 18, name: 'Sundu School'   },
+  { x: 48, y: 35, name: 'Market Sq.'     },
+  { x: 62, y: 14, name: 'St. Luke\'s'    },
+  { x: 75, y: 28, name: 'East Clinic'    },
+  { x: 88, y: 18, name: 'Hill Station'   },
+  { x: 70, y: 55, name: 'South Village'  },
+  { x: 84, y: 72, name: 'Cattle Post'    },
+  { x: 38, y: 78, name: 'Home Block'     },
+];
+const MAP_DEPOT = { x: 50, y: 58 };
+
+// ── STATE ─────────────────────────────────────────────────────────────────────
+let state = {};
+
+// ── SCREEN HELPER ─────────────────────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+}
+
+// ── LOG ───────────────────────────────────────────────────────────────────────
+function log(msg, type = '') {
+  const box = document.getElementById('log');
+  const p   = document.createElement('p');
+  if (type) p.className = type;
+  p.textContent = msg;
+  box.prepend(p);
+  while (box.children.length > 30) box.removeChild(box.lastChild);
+}
+
+// ── SVG PUMP ICON ─────────────────────────────────────────────────────────────
+// Returns an SVG string representing a handpump in the given state.
+function makePumpSVG(pumpState) {
+  const C = {
+    working:   { base: '#1b4d1f', pipe: '#2e7d32', handle: '#43a047', accent: '#388e3c' },
+    broken:    { base: '#4a0000', pipe: '#7f0000', handle: '#c62828', accent: '#b71c1c' },
+    repairing: { base: '#3e2800', pipe: '#6d4c00', handle: '#ffa000', accent: '#f57f17' },
+  }[pumpState];
+
+  const water = pumpState === 'working'
+    ? `<ellipse class="water-drop"   cx="13" cy="44" rx="2.2" ry="3.2" fill="#4fc3f7"/>
+       <ellipse class="water-drop-b" cx="9"  cy="49" rx="1.6" ry="2.3" fill="#4fc3f7" opacity="0.7"/>`
+    : '';
+
+  const brokenX = pumpState === 'broken'
+    ? `<g transform="translate(33,2)">
+         <line x1="0" y1="0" x2="10" y2="10" stroke="#ef5350" stroke-width="2.2" stroke-linecap="round"/>
+         <line x1="10" y1="0" x2="0"  y2="10" stroke="#ef5350" stroke-width="2.2" stroke-linecap="round"/>
+       </g>`
+    : '';
+
+  const wrench = pumpState === 'repairing'
+    ? `<g transform="translate(34,0) rotate(35,6,6)">
+         <rect x="3" y="0" width="6" height="14" rx="3" fill="${C.handle}" opacity="0.9"/>
+         <rect x="0" y="10" width="12" height="4" rx="2" fill="${C.accent}"/>
+       </g>`
+    : '';
+
+  return `<svg viewBox="0 0 50 62" xmlns="http://www.w3.org/2000/svg">
+    <!-- Plinth / base -->
+    <rect x="14" y="50" width="22" height="10" rx="3" fill="${C.base}"/>
+    <!-- Rising pipe -->
+    <rect x="22" y="20" width="6" height="32" rx="2" fill="${C.pipe}"/>
+    <!-- Handle pivot housing -->
+    <rect x="20" y="17" width="10" height="8" rx="2" fill="${C.accent}"/>
+    <!-- Handle arm (slightly angled) -->
+    <rect x="6" y="18" width="38" height="5" rx="2.5" fill="${C.handle}" transform="rotate(-8,25,20)"/>
+    <!-- Spout -->
+    <rect x="6" y="28" width="18" height="5" rx="2.5" fill="${C.pipe}"/>
+    ${water}
+    ${brokenX}
+    ${wrench}
+  </svg>`;
+}
+
+// ── PUMP DOM ──────────────────────────────────────────────────────────────────
+function getPumpEl(id) {
+  return document.querySelector(`.pump[data-id="${id}"]`);
+}
+
+function renderPump(pump) {
+  const el = getPumpEl(pump.id);
+  if (!el) return;
+  el.className = `pump ${pump.state}`;
+  el.querySelector('.pump-svg-wrap').innerHTML = makePumpSVG(pump.state);
+  el.querySelector('.repair-fill').style.width =
+    pump.state === 'repairing' ? `${pump.repairProgress * 100}%` : '0%';
+}
+
+function buildPumpGrid() {
+  const grid = document.getElementById('pump-grid');
+  grid.innerHTML = '';
+  for (let i = 0; i < TOTAL_PUMPS; i++) {
+    const loc = PUMP_LOCATIONS[i];
+    const el  = document.createElement('div');
+    el.className  = 'pump working';
+    el.dataset.id = i;
+    el.style.left = loc.x + '%';
+    el.style.top  = loc.y + '%';
+    el.innerHTML  = `
+      <div class="pump-svg-wrap">${makePumpSVG('working')}</div>
+      <span class="pump-name">${loc.name}</span>
+      <div class="people-badge">👥 ${state.cfg.peoplePerPump}</div>
+      <div class="repair-ring"><div class="repair-fill" style="width:0%"></div></div>
+    `;
+    el.addEventListener('click', () => handlePumpClick(i));
+    grid.appendChild(el);
+  }
+}
+
+// ── MECHANIC SPRITES ──────────────────────────────────────────────────────────
+
+// Position of a pump's centre relative to #play-area
+function getPumpCenter(pumpId) {
+  const area = document.getElementById('play-area');
+  const pump = getPumpEl(pumpId);
+  if (!area || !pump) return { x: 0, y: 0 };
+  const ar = area.getBoundingClientRect();
+  const pr = pump.getBoundingClientRect();
+  return {
+    x: pr.left - ar.left + pr.width  / 2,
+    y: pr.top  - ar.top  + pr.height / 2,
+  };
+}
+
+// Centre of the Workshop depot in px relative to #play-area
+function getDepotPos() {
+  const area = document.getElementById('play-area');
+  if (!area) return { x: 0, y: 0 };
+  const ar = area.getBoundingClientRect();
+  return { x: ar.width * (MAP_DEPOT.x / 100), y: ar.height * (MAP_DEPOT.y / 100) };
+}
+
+// Off-screen right edge — for mechanics on a mission run
+function getMissionPos(slotIndex) {
+  const area = document.getElementById('play-area');
+  if (!area) return { x: 0, y: 0 };
+  const ar = area.getBoundingClientRect();
+  return { x: ar.width - 14, y: ar.height * 0.20 + slotIndex * 28 };
+}
+
+function moveTo(sprite, x, y) {
+  sprite.style.left = (x - SPRITE_HALF) + 'px';
+  sprite.style.top  = (y - SPRITE_HALF) + 'px';
+}
+
+function setLabel(mech, text) {
+  const el = document.getElementById('ml-' + mech.id);
+  if (el) el.textContent = text;
+}
+
+function createSprite(mechId) {
+  const area = document.getElementById('play-area');
+  const el   = document.createElement('div');
+  el.className    = 'mechanic-sprite';
+  el.dataset.mech = mechId;
+  el.innerHTML    = `👷<span class="m-label" id="ml-${mechId}"></span>`;
+  el.style.left   = '-200px';
+  el.style.top    = '-200px';
+  area.appendChild(el);
+  return el;
+}
+
+function buildMechanicSprites(count) {
+  document.querySelectorAll('.mechanic-sprite').forEach(e => e.remove());
+  state.mechList = [];
+  for (let i = 0; i < count; i++) {
+    state.mechList.push({
+      id:          i,
+      status:      'idle',      // idle | repairing | mission
+      assignedTo:  null,        // pumpId
+      missionType: null,
+      missionEnd:  null,
+      wanderLabel: null,        // set when doing preventive maintenance wander
+      el:          createSprite(i),
+    });
+  }
+}
+
+// Cluster idle mechanics around the depot.
+// In Pro mode, pass returningId to only reposition the just-returned mechanic
+// and leave wandering mechanics undisturbed.
+function repositionIdleMechanics(returningId = null) {
+  const depot  = getDepotPos();
+  const idle   = state.mechList.filter(m => m.status === 'idle');
+  const spread = 18;
+  const startX = depot.x - ((idle.length - 1) * spread) / 2;
+
+  if (state.mode === 'pro' && returningId !== null) {
+    // Only move the mechanic that just returned; don't snap wanderers
+    const mech = idle.find(m => m.id === returningId);
+    if (mech) {
+      const idx = idle.indexOf(mech);
+      moveTo(mech.el, startX + idx * spread, depot.y - 10);
+      mech.el.classList.remove('on-mission');
+      mech.wanderLabel = null;
+    }
+    return;
+  }
+
+  idle.forEach((m, i) => {
+    moveTo(m.el, startX + i * spread, depot.y - 10);
+    m.el.classList.remove('on-mission');
+    m.wanderLabel = null;
+  });
+}
+
+function getIdleMechanic() {
+  return state.mechList.find(m => m.status === 'idle') || null;
+}
+
+function countIdle() {
+  return state.mechList.filter(m => m.status === 'idle').length;
+}
+
+// ── DISPATCH MISSIONS ─────────────────────────────────────────────────────────
+function dispatchMission(type) {
+  const mech = getIdleMechanic();
+  if (!mech) return;
+
+  const cfg = state.cfg.missions[type];
+  if (!cfg) return; // mission type not available in this mode
+  const slot     = state.mechList.filter(m => m.status === 'mission').length;
+  const duration = cfg.timeMin + Math.random() * (cfg.timeMax - cfg.timeMin);
+
+  mech.status      = 'mission';
+  mech.missionType = type;
+  mech.missionEnd  = Date.now() + duration;
+  mech.el.classList.add('on-mission');
+
+  if (type === 'parts') state.budget -= state.cfg.partsCost;
+
+  let pos, logDetail = '';
+  if (type === 'money') {
+    // Go collect fees from a community — prefer broken pump sites
+    const pool    = state.pumps.filter(p => p.state === 'broken');
+    const target  = (pool.length > 0 ? pool : state.pumps)[Math.floor(Math.random() * (pool.length > 0 ? pool.length : state.pumps.length))];
+    const c = getPumpCenter(target.id);
+    pos = { x: c.x, y: c.y - 16 };
+    logDetail = ` → ${PUMP_LOCATIONS[target.id].name}`;
+  } else {
+    pos = getMissionPos(slot);
+  }
+  moveTo(mech.el, pos.x, pos.y);
+
+  const names = { money: 'Collect Funding', parts: 'Fetch Parts', recruit: 'Recruit Help' };
+  log(`👷 ${names[type]}${logDetail} (back in ${Math.round(duration / 1000)} days)`, 'info');
+  updateDispatchButtons();
+  updateHUD();
+}
+
+function completeMission(mech) {
+  const type = mech.missionType;
+  const cfg  = state.cfg.missions[type];
+
+  if (type === 'money') {
+    state.budget += cfg.reward;
+    log(`💰 Funding collected: +$${cfg.reward}`, 'good');
+    const dp = getDepotPos();
+    floatText(dp.x, dp.y - 18, `+$${cfg.reward}`, '#a5d6a7');
+  } else if (type === 'parts') {
+    state.parts += cfg.reward;
+    log(`📦 Parts restocked: +${cfg.reward}`, 'good');
+    const dp = getDepotPos();
+    floatText(dp.x, dp.y - 18, `+${cfg.reward} parts`, '#80deea');
+  } else if (type === 'recruit') {
+    const newId = state.mechList.length;
+    const newEl = createSprite(newId);
+    state.mechList.push({ id: newId, status: 'idle', assignedTo: null, missionType: null, missionEnd: null, el: newEl });
+    log(`🤝 New mechanic joined the team!`, 'good');
+  }
+
+  mech.status      = 'idle';
+  mech.missionType = null;
+  mech.missionEnd  = null;
+  mech.el.classList.remove('on-mission');
+  setLabel(mech, '');
+
+  const rid = mech.id;
+  requestAnimationFrame(() => repositionIdleMechanics(rid));
+  updateDispatchButtons();
+  updateHUD();
+}
+
+function updateDispatchButtons() {
+  const has = countIdle() > 0;
+  document.getElementById('btn-money').disabled   = !has;
+  document.getElementById('btn-parts').disabled   = !has || state.budget < state.cfg.partsCost;
+  document.getElementById('btn-recruit').disabled = !has;
+}
+
+// ── PUMP CLICK ────────────────────────────────────────────────────────────────
+function handlePumpClick(id) {
+  const pump = state.pumps[id];
+  if (pump.state !== 'broken') return;
+
+  const mech = getIdleMechanic();
+  if (!mech) { log('No mechanics free!', 'warn'); flashNoResource(id); return; }
+  if (state.parts < 1) { log('No spare parts!', 'warn'); flashNoResource(id); return; }
+
+  state.parts--;
+
+  // Tally the wait time this pump has already accrued
+  if (pump.brokenSince) {
+    state.totalDowntime += (Date.now() - pump.brokenSince) / 1000;
+    pump.brokenSince = null;
+  }
+
+  // Assign mechanic
+  mech.status    = 'repairing';
+  mech.assignedTo = id;
+  mech.el.classList.remove('on-mission');
+
+  // Animate mechanic to hover just above the pump
+  const c = getPumpCenter(id);
+  moveTo(mech.el, c.x, c.y - 16);
+
+  pump.state          = 'repairing';
+  pump.repairProgress = 0;
+  pump.repairStart    = Date.now();
+  renderPump(pump);
+  log(`🔧 Mechanic heading to ${PUMP_LOCATIONS[id].name}`, 'info');
+  updateDispatchButtons();
+  updateHUD();
+}
+
+function flashNoResource(id) {
+  const el = getPumpEl(id);
+  el.classList.add('no-resource');
+  setTimeout(() => el.classList.remove('no-resource'), 350);
+}
+
+function floatText(x, y, text, color, size = '0.7rem') {
+  const area = document.getElementById('play-area');
+  if (!area) return;
+  const el = document.createElement('div');
+  el.className    = 'float-text';
+  el.textContent  = text;
+  el.style.color  = color;
+  el.style.fontSize = size;
+  el.style.left   = x + 'px';
+  el.style.top    = y + 'px';
+  area.appendChild(el);
+  setTimeout(() => el.remove(), 2100);
+}
+
+function showRepairHint(pumpId) {
+  state.hintShown = true;
+  const hint = document.getElementById('repair-hint');
+  if (!hint) return;
+  const c = getPumpCenter(pumpId);
+  hint.textContent = '↑ Click broken pump to repair!';
+  hint.style.left  = c.x + 'px';
+  hint.style.top   = (c.y + 30) + 'px';
+  hint.classList.add('visible');
+  const hide = () => hint.classList.remove('visible');
+  document.addEventListener('click', hide, { once: true, capture: true });
+  setTimeout(hide, 8000);
+}
+
+// ── GAME SETUP ────────────────────────────────────────────────────────────────
+function startGame(modeName) {
+  const cfg = MODES[modeName];
+
+  clearInterval(state.tickInterval);
+  clearTimeout(state.breakTimer);
+  clearTimeout(state.autoMoneyTimer);
+  clearTimeout(state.autoPartsTimer);
+  clearTimeout(state.prevMaintTimer);
+  clearTimeout(state.crisisTimer);
+  clearTimeout(state.crisisBannerTimer);
+
+  state = {
+    mode:           modeName,
+    cfg,
+    timeLeft:       ROUND_DURATION,
+    parts:          cfg.parts,
+    budget:         cfg.budget,
+    pumps:          [],
+    mechList:       [],
+    pumpsRepaired:  0,
+    totalDowntime:  0,
+    peakWithout:    0,
+    hintShown:      false,
+    tickInterval:   null,
+    breakTimer:     null,
+    autoMoneyTimer:    null,
+    autoPartsTimer:    null,
+    autoMoneyNext:     null,
+    autoPartsNext:     null,
+    prevMaintTimer:    null,
+    crisisTimer:       null,
+    crisisBannerTimer: null,
+  };
+
+  for (let i = 0; i < TOTAL_PUMPS; i++) {
+    state.pumps.push({ id: i, state: 'working', repairProgress: 0, brokenSince: null });
+  }
+
+  buildPumpGrid();
+  buildMechanicSprites(cfg.startMechanics);
+
+  // Wait two frames for the grid to paint so getBoundingClientRect works
+  requestAnimationFrame(() => requestAnimationFrame(() => repositionIdleMechanics()));
+
+  // Show/hide Pro-mode replenishment badges (embedded in budget + parts boxes)
+  const isPro = modeName === 'pro';
+  document.querySelectorAll('.rep-badge').forEach(el => {
+    el.style.display = isPro ? 'block' : 'none';
+  });
+
+  // Configure dispatch panel for this mode
+  document.getElementById('btn-money').style.display   = isPro ? 'none' : '';
+  document.getElementById('btn-recruit').style.display = isPro ? 'none' : '';
+  document.querySelector('.dispatch-btns').style.gridTemplateColumns = isPro ? '1fr' : '';
+  document.querySelector('#dispatch-panel .dp-title').textContent =
+    isPro ? 'Express parts order (automated funding & deliveries active)'
+           : 'Dispatch a mechanic on a run';
+
+  // Label visible dispatch buttons
+  if (cfg.missions.money)   document.getElementById('dd-money').textContent   = cfg.missions.money.label;
+  if (cfg.missions.parts)   document.getElementById('dd-parts').textContent   = cfg.missions.parts.label;
+  if (cfg.missions.recruit) document.getElementById('dd-recruit').textContent = cfg.missions.recruit.label;
+
+  document.getElementById('mode-label').textContent = cfg.label;
+  document.getElementById('mode-label').className   =
+    'mode-label ' + (modeName === 'reactive' ? 'reactive' : 'pro');
+  document.getElementById('log').innerHTML = '';
+  document.getElementById('timer-bar').style.width      = '100%';
+  document.getElementById('timer-bar').style.background = '#4fc3f7';
+
+  updateHUD();
+  updateDispatchButtons();
+  log(`Game started — ${cfg.label}`, 'info');
+  showScreen('game-screen');
+
+  document.getElementById('intro-content').innerHTML = buildIntroHTML(modeName);
+  document.getElementById('intro-overlay').classList.add('visible');
+}
+
+function buildIntroHTML(modeName) {
+  if (modeName === 'reactive') {
+    return `
+      <h2>⚠ Reactive Mode</h2>
+      <p class="intro-sub">12 pumps · 60 days · no maintenance plan. Here's what you can do:</p>
+      <div class="intro-section">
+        <div class="intro-row">
+          <span class="intro-icon">🔴</span>
+          <div><strong>When a pump turns red — click it to repair</strong><br>
+            A free mechanic will head over. Each repair uses 1 spare part.</div>
+        </div>
+      </div>
+      <div class="intro-section">
+        <div class="intro-section-title">Dispatch panel — send a mechanic on a run</div>
+        <div class="intro-btn-row">
+          <span class="intro-icon">💰</span>
+          <div><strong>Collect Funding</strong> <span class="intro-tag free">free</span><br>
+            Mechanic collects community fees — back in 3–7 days with +$120</div>
+        </div>
+        <div class="intro-btn-row">
+          <span class="intro-icon">📦</span>
+          <div><strong>Fetch Parts</strong> <span class="intro-tag cost">costs $80</span><br>
+            Mechanic buys spare parts — back in 2–4 days with +2 parts</div>
+        </div>
+        <div class="intro-btn-row">
+          <span class="intro-icon">🤝</span>
+          <div><strong>Recruit Help</strong> <span class="intro-tag free">free</span><br>
+            Hire an extra mechanic — takes 12–18 days</div>
+        </div>
+      </div>
+      <p class="intro-warning">⚡ Crises will strike at random — funds get diverted, parts go missing, mechanics fall sick. You won't see them coming.</p>
+      <button class="btn-primary intro-start" onclick="dismissIntro()">Start the Round →</button>`;
+  } else {
+    return `
+      <h2 style="color:#66bb6a">✓ Professional Mode</h2>
+      <p class="intro-sub">12 pumps · 60 days · a managed service contract. Here's how it works:</p>
+      <div class="intro-section">
+        <div class="intro-row">
+          <span class="intro-icon">🔴</span>
+          <div><strong>When a pump turns red — click it to repair</strong><br>
+            A free mechanic will head over. Repairs are faster and parts are restocked automatically.</div>
+        </div>
+      </div>
+      <div class="intro-section">
+        <div class="intro-section-title">Everything runs on a contract — no scrambling for resources</div>
+        <div class="intro-btn-row">
+          <span class="intro-icon">💳</span>
+          <div><strong>Funding arrives automatically</strong> <span class="intro-tag free">every 12 days</span><br>
+            Contract payments of +$80 land at the workshop without any action from you</div>
+        </div>
+        <div class="intro-btn-row">
+          <span class="intro-icon">🚚</span>
+          <div><strong>Parts delivered automatically</strong> <span class="intro-tag free">every 10 days</span><br>
+            +3 parts arrive at the workshop (−$60 deducted from contract budget)</div>
+        </div>
+        <div class="intro-btn-row">
+          <span class="intro-icon">📦</span>
+          <div><strong>Express Parts order</strong> <span class="intro-tag cost">costs $60</span><br>
+            Need parts sooner? Dispatch a mechanic for a faster run — back in 2–3 days with +3 parts</div>
+        </div>
+      </div>
+      <div class="intro-section">
+        <div class="intro-row">
+          <span class="intro-icon">🔍</span>
+          <div><strong>Mechanics do preventive maintenance between repairs</strong><br>
+            You'll see them moving around the map inspecting pumps — this is what keeps the break rate low</div>
+        </div>
+      </div>
+      <button class="btn-primary intro-start" onclick="dismissIntro()">Start the Round →</button>`;
+  }
+}
+
+function beginGameLoop() {
+  const cfg = state.cfg;
+  const isPro = state.mode === 'pro';
+  state.tickInterval = setInterval(() => gameTick(250), 250);
+  scheduleBreak();
+  if (cfg.autoMoney) scheduleAutoMoney();
+  if (cfg.autoParts) scheduleAutoParts();
+  if (isPro)         schedulePreventiveMaintenance();
+  if (cfg.crises)    scheduleCrisisEvent();
+}
+
+function dismissIntro() {
+  document.getElementById('intro-overlay').classList.remove('visible');
+  beginGameLoop();
+}
+
+function scheduleBreak() {
+  const brokenNow = state.pumps.filter(p => p.state === 'broken').length;
+  const cascade   = state.mode === 'reactive' && brokenNow > 4;
+  const base      = cascade ? state.cfg.breakInterval * 0.45 : state.cfg.breakInterval;
+  const jitter    = base * 0.3;
+  const delay     = base + (Math.random() * 2 - 1) * jitter;
+  state.breakTimer = setTimeout(() => {
+    if (state.timeLeft <= 0) return;
+    breakRandomPump();
+    scheduleBreak();
+  }, delay);
+}
+
+function flashReplenish(boxId) {
+  const el = document.getElementById(boxId);
+  if (!el) return;
+  el.classList.remove('arriving');
+  void el.offsetWidth; // force reflow to restart animation
+  el.classList.add('arriving');
+  setTimeout(() => el.classList.remove('arriving'), 1000);
+}
+
+function scheduleAutoMoney() {
+  const cfg = state.cfg.autoMoney;
+  state.autoMoneyNext  = Date.now() + cfg.interval;
+  state.autoMoneyTimer = setTimeout(() => {
+    if (state.timeLeft <= 0) return;
+    state.budget        += cfg.reward;
+    state.autoMoneyNext  = null;
+    log(cfg.msg, 'good');
+    flashReplenish('rep-money-box');
+    const amd = getDepotPos(); floatText(amd.x, amd.y - 18, `+$${cfg.reward}`, '#a5d6a7');
+    updateHUD();
+    updateDispatchButtons();
+    scheduleAutoMoney();
+  }, cfg.interval);
+}
+
+function scheduleAutoParts() {
+  const cfg = state.cfg.autoParts;
+  state.autoPartsNext  = Date.now() + cfg.interval;
+  state.autoPartsTimer = setTimeout(() => {
+    if (state.timeLeft <= 0) return;
+    state.parts         += cfg.reward;
+    if (cfg.cost) state.budget = Math.max(0, state.budget - cfg.cost);
+    state.autoPartsNext  = null;
+    log(cfg.msg, 'good');
+    flashReplenish('rep-parts-box');
+    const apd = getDepotPos(); floatText(apd.x, apd.y - 18, `+${cfg.reward} parts`, '#80deea');
+    updateHUD();
+    updateDispatchButtons();
+    scheduleAutoParts();
+  }, cfg.interval);
+}
+
+// ── CRISIS EVENTS (Reactive mode only) ────────────────────────────────────────
+
+function scheduleCrisisEvent() {
+  const delay = state.cfg.crisisInterval + Math.random() * 8000;
+  state.crisisTimer = setTimeout(() => {
+    if (state.timeLeft <= 0) return;
+    const events = state.cfg.crises;
+    const ev = events[Math.floor(Math.random() * events.length)];
+    ev.apply(state);
+    showCrisisBanner(ev.title, ev.detail);
+    log(`${ev.title} ${ev.detail}`, 'warn');
+    updateHUD();
+    updateDispatchButtons();
+    scheduleCrisisEvent();
+  }, delay);
+}
+
+function showCrisisBanner(title, detail) {
+  const el = document.getElementById('crisis-banner');
+  if (!el) return;
+  document.getElementById('crisis-title').textContent  = title;
+  document.getElementById('crisis-detail').textContent = detail;
+  el.classList.remove('visible');
+  void el.offsetWidth; // restart animation
+  el.classList.add('visible');
+  clearTimeout(state.crisisBannerTimer);
+  state.crisisBannerTimer = setTimeout(() => {
+    el.classList.remove('visible');
+    el.style.display = 'none';
+  }, 2900);
+}
+
+// Temporarily removes one idle mechanic from the available pool
+function sidelineMechanic(durationMs) {
+  const mech = state.mechList.find(m => m.status === 'idle');
+  if (!mech) return; // all busy — crisis has no extra bite
+  mech.status      = 'mission';
+  mech.missionType = 'sideline'; // no reward on return
+  mech.missionEnd  = Date.now() + durationMs;
+  mech.el.classList.add('on-mission');
+  const slot = state.mechList.filter(m => m.status === 'mission').length - 1;
+  moveTo(mech.el, getMissionPos(slot).x, getMissionPos(slot).y);
+  updateDispatchButtons();
+}
+
+// Pro mode: idle mechanics wander to working pumps to show preventive activity
+function schedulePreventiveMaintenance() {
+  const delay = 1800 + Math.random() * 2200;
+  state.prevMaintTimer = setTimeout(() => {
+    if (state.timeLeft <= 0) return;
+    const idle    = state.mechList.filter(m => m.status === 'idle');
+    const working = state.pumps.filter(p => p.state === 'working');
+    if (idle.length > 0 && working.length > 0) {
+      const mech = idle[Math.floor(Math.random() * idle.length)];
+      const pump = working[Math.floor(Math.random() * working.length)];
+      const c    = getPumpCenter(pump.id);
+      moveTo(mech.el, c.x, c.y - 10);
+      mech.wanderLabel = '🔍';
+    }
+    schedulePreventiveMaintenance();
+  }, delay);
+}
+
+function breakRandomPump() {
+  const candidates = state.pumps.filter(p => p.state === 'working');
+  if (candidates.length === 0) return;
+  const pump       = candidates[Math.floor(Math.random() * candidates.length)];
+  pump.state       = 'broken';
+  pump.brokenSince = Date.now();
+  renderPump(pump);
+  const name = PUMP_LOCATIONS[pump.id].name;
+  log(`⚠ ${name} pump broke down!`, 'warn');
+  const bc = getPumpCenter(pump.id);
+  floatText(bc.x, bc.y - 18, `−${state.cfg.peoplePerPump} 💧`, '#ff8a80', '0.82rem');
+  if (!state.hintShown) showRepairHint(pump.id);
+}
+
+// ── GAME TICK (every 250 ms) ──────────────────────────────────────────────────
+function gameTick(dtMs) {
+  const dtSec = dtMs / 1000;
+  state.timeLeft = Math.max(0, state.timeLeft - dtSec);
+
+  // Advance active repairs
+  state.pumps.forEach(pump => {
+    if (pump.state !== 'repairing') return;
+    const elapsed       = (Date.now() - pump.repairStart) / 1000;
+    pump.repairProgress = Math.min(1, elapsed / (state.cfg.repairTime / 1000));
+
+    if (pump.repairProgress >= 1) {
+      pump.state = 'working';
+      state.pumpsRepaired++;
+
+      // Return the mechanic to the depot
+      const mech = state.mechList.find(m => m.assignedTo === pump.id);
+      if (mech) {
+        mech.status     = 'idle';
+        mech.assignedTo = null;
+        setLabel(mech, '');
+        const rid = mech.id;
+        requestAnimationFrame(() => repositionIdleMechanics(rid));
+        updateDispatchButtons();
+      }
+      log(`✓ ${PUMP_LOCATIONS[pump.id].name} back online`, 'good');
+      const rc = getPumpCenter(pump.id);
+      floatText(rc.x, rc.y - 18, `+${state.cfg.peoplePerPump} 💧`, '#69f0ae', '0.82rem');
+    }
+    renderPump(pump);
+  });
+
+  // Accumulate downtime for every pump currently broken
+  state.pumps.forEach(pump => {
+    if (pump.state === 'broken') state.totalDowntime += dtSec;
+  });
+
+  // Complete any missions whose timer has expired
+  state.mechList.forEach(mech => {
+    if (mech.status === 'mission' && Date.now() >= mech.missionEnd) {
+      completeMission(mech);
+    }
+  });
+
+  // Track peak people without water
+  const broken  = state.pumps.filter(p => p.state === 'broken').length;
+  const without = broken * state.cfg.peoplePerPump;
+  if (without > state.peakWithout) state.peakWithout = without;
+
+  // Cascade crisis overlay — Reactive mode, >4 pumps broken
+  const overlay = document.getElementById('cascade-overlay');
+  if (overlay) overlay.classList.toggle('active', state.mode === 'reactive' && broken > 4);
+
+  // Colour timer bar as time runs low
+  const pct = state.timeLeft / ROUND_DURATION;
+  const bar = document.getElementById('timer-bar');
+  bar.style.width      = `${pct * 100}%`;
+  bar.style.background = pct > 0.4 ? '#4fc3f7' : pct > 0.2 ? '#ffa000' : '#ef5350';
+
+  updateMechanicLabels();
+  updateHUD();
+  if (state.timeLeft <= 0) endGame();
+}
+
+function updateMechanicLabels() {
+  const now  = Date.now();
+  const icons = { money: '💰', parts: '📦', recruit: '🤝', sideline: '🤒' };
+  state.mechList.forEach(mech => {
+    const el = document.getElementById('ml-' + mech.id);
+    if (!el) return;
+    let text = '', urgent = false;
+    if (mech.status === 'repairing') {
+      const pump      = state.pumps[mech.assignedTo];
+      const remaining = pump ? Math.max(0, (pump.repairStart + state.cfg.repairTime - now) / 1000) : 0;
+      text   = `🔧 ${Math.ceil(remaining)}d`;
+      urgent = remaining < 1;
+    } else if (mech.status === 'mission') {
+      const remaining = Math.max(0, (mech.missionEnd - now) / 1000);
+      text   = `${icons[mech.missionType]} ${Math.ceil(remaining)}d`;
+      urgent = remaining < 1;
+    } else if (mech.wanderLabel) {
+      text = mech.wanderLabel;
+    }
+    el.textContent = text;
+    el.className   = 'm-label' + (urgent ? ' urgent' : '');
+  });
+}
+
+function updateHUD() {
+  document.getElementById('stat-time').textContent     = Math.ceil(state.timeLeft);
+  document.getElementById('stat-people').textContent   =
+    state.pumps.filter(p => p.state === 'broken').length * state.cfg.peoplePerPump;
+  document.getElementById('stat-budget').textContent   = '$' + state.budget;
+  document.getElementById('stat-downtime').textContent = Math.round(state.totalDowntime);
+  document.getElementById('res-mechanics').textContent = countIdle();
+  document.getElementById('res-parts').textContent     = state.parts;
+
+  // Budget danger state — Reactive mode: broke and out of parts
+  if (state.mode === 'reactive') {
+    const inDanger = state.budget < state.cfg.partsCost && state.parts === 0;
+    document.querySelector('.stat-box.budget').classList.toggle('danger', inDanger);
+  }
+
+  // Pro-mode replenishment countdowns
+  if (state.mode === 'pro') {
+    const now = Date.now();
+    const mcd = document.getElementById('rep-money-cd');
+    const pcd = document.getElementById('rep-parts-cd');
+    if (mcd) mcd.textContent = state.autoMoneyNext
+      ? Math.max(0, Math.ceil((state.autoMoneyNext - now) / 1000)) + 'd'  : '—';
+    if (pcd) pcd.textContent = state.autoPartsNext
+      ? Math.max(0, Math.ceil((state.autoPartsNext - now) / 1000)) + 'd' : '—';
+  }
+}
+
+// ── END GAME ──────────────────────────────────────────────────────────────────
+function endGame() {
+  clearInterval(state.tickInterval);
+  clearTimeout(state.breakTimer);
+  clearTimeout(state.autoMoneyTimer);
+  clearTimeout(state.autoPartsTimer);
+  clearTimeout(state.prevMaintTimer);
+  clearTimeout(state.crisisTimer);
+  clearTimeout(state.crisisBannerTimer);
+
+  // Count remaining downtime for pumps still broken at the whistle
+  state.pumps.forEach(pump => {
+    if (pump.state === 'broken' && pump.brokenSince) {
+      state.totalDowntime += (Date.now() - pump.brokenSince) / 1000;
+    }
+  });
+
+  const totalPossible = TOTAL_PUMPS * ROUND_DURATION;
+  const uptime = Math.max(0, Math.round(
+    ((totalPossible - state.totalDowntime) / totalPossible) * 100
+  ));
+
+  document.getElementById('end-mode-label').textContent = state.cfg.label.toUpperCase();
+  document.getElementById('end-repaired').textContent   = state.pumpsRepaired;
+  document.getElementById('end-downtime').textContent   = Math.round(state.totalDowntime);
+  document.getElementById('end-without').textContent    = state.peakWithout;
+  document.getElementById('end-uptime').textContent     = uptime + '%';
+
+  // Save results for cross-mode comparison
+  localStorage.setItem(`pp_results_${state.mode}`, JSON.stringify({
+    uptime, peakWithout: state.peakWithout,
+    downtime: Math.round(state.totalDowntime), repaired: state.pumpsRepaired,
+  }));
+
+  // Cross-mode comparison panel — show when both modes have been played
+  const compPanel = document.getElementById('comparison-panel');
+  const rr = JSON.parse(localStorage.getItem('pp_results_reactive') || 'null');
+  const pr = JSON.parse(localStorage.getItem('pp_results_pro')      || 'null');
+  if (rr && pr && compPanel) {
+    const w = (rNum, pNum, higherIsBetter = true, fmt = v => v) => {
+      const rWins = higherIsBetter ? rNum > pNum : rNum < pNum;
+      return [
+        `<span class="cs-value${rWins ? ' winner' : ''}">${fmt(rNum)}</span>`,
+        `<span class="cs-value${!rWins ? ' winner' : ''}">${fmt(pNum)}</span>`,
+      ];
+    };
+    const pct        = v => v + '%';
+    const [ru, pu]   = w(rr.uptime,      pr.uptime,      true,  pct);
+    const [rd, pd]   = w(rr.downtime,    pr.downtime,    false);
+    const [rwp, pwp] = w(rr.peakWithout, pr.peakWithout, false);
+    const [rrp, prp] = w(rr.repaired,    pr.repaired,    true);
+    compPanel.innerHTML = `
+      <h3>⚖ Head-to-Head Comparison</h3>
+      <div class="compare-grid">
+        <div class="compare-col reactive">
+          <h4>⚠ Reactive Mode</h4>
+          <div class="compare-stat"><span class="cs-label">Uptime</span>${ru}</div>
+          <div class="compare-stat"><span class="cs-label">Pump-days lost</span>${rd}</div>
+          <div class="compare-stat"><span class="cs-label">Peak without water</span>${rwp}</div>
+          <div class="compare-stat"><span class="cs-label">Pumps repaired</span>${rrp}</div>
+        </div>
+        <div class="compare-col pro">
+          <h4>✓ Professional Mode</h4>
+          <div class="compare-stat"><span class="cs-label">Uptime</span>${pu}</div>
+          <div class="compare-stat"><span class="cs-label">Pump-days lost</span>${pd}</div>
+          <div class="compare-stat"><span class="cs-label">Peak without water</span>${pwp}</div>
+          <div class="compare-stat"><span class="cs-label">Pumps repaired</span>${prp}</div>
+        </div>
+      </div>`;
+  } else if (compPanel) {
+    const other = state.mode === 'reactive' ? 'Professional' : 'Reactive';
+    compPanel.innerHTML = `<p style="font-size:0.75rem;color:#546e7a;text-align:center">Play <strong style="color:#90a4ae">${other} Mode</strong> to unlock the head-to-head comparison.</p>`;
+  }
+
+  const isReactive = state.mode === 'reactive';
+  document.getElementById('end-explanation').innerHTML = `
+    <h3>Why does this matter?</h3>
+    ${isReactive
+      ? `<p>In <strong>Reactive Mode</strong> you felt the squeeze that under-resourced
+         maintenance teams face every day: too few mechanics to fix pumps <em>and</em>
+         run supply trips, not enough parts, and a budget that ran dry fast.
+         Every supply run meant a mechanic was unavailable for repairs — a real dilemma
+         in districts with no maintenance plan.</p>
+         <p style="margin-top:8px">Try <strong>Professional Mode</strong> to see how
+         a well-funded system — with more staff, stocked stores, and faster logistics —
+         keeps far more pumps running.</p>`
+      : `<p>In <strong>Professional Mode</strong> the district had trained staff,
+         stocked spare-parts stores, and a dedicated budget.
+         Supply runs were quicker and cheaper, so you could keep mechanics free for
+         repairs without constantly scrambling for resources.</p>
+         <p style="margin-top:8px">Research across sub-Saharan Africa shows that
+         professionalised maintenance can sustain uptime of <strong>95% or higher</strong>,
+         compared to reactive systems where on average <strong>one-third of pumps are broken
+         at any one time</strong>. The difference is not the hardware — it's planning,
+         funding, and accountability.</p>`
+    }`;
+
+  showScreen('end-screen');
+}
+</script>
+</body>
+</html>
