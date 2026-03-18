@@ -127,11 +127,13 @@
       text-overflow: ellipsis; max-width: 48px;
     }
 
-    .pump.working   { background: rgba(27,  94, 32,  0.82); border-color: #43a047; }
-    .pump.broken    { background: rgba(127,  0,  0,  0.88); border-color: #e53935; cursor: pointer; animation: pulse-red 1.4s infinite; }
-    .pump.repairing { background: rgba(74,  53,  0,  0.88); border-color: #ffa000; }
+    .pump.working    { background: rgba(27,  94, 32,  0.82); border-color: #43a047; }
+    .pump.broken     { background: rgba(127,  0,  0,  0.88); border-color: #e53935; cursor: pointer; animation: pulse-red 1.4s infinite; }
+    .pump.repairing  { background: rgba(74,  53,  0,  0.88); border-color: #ffa000; }
+    .pump.community  { background: rgba(74,   0, 130, 0.82); border-color: #ab47bc; cursor: help;    animation: pulse-purple 2s infinite; }
 
-    .pump.broken:hover { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 0 16px rgba(229,57,53,0.6); }
+    .pump.broken:hover    { transform: translate(-50%, -50%) scale(1.06); box-shadow: 0 0 16px rgba(229,57,53,0.6); }
+    .pump.community:hover { transform: translate(-50%, -50%) scale(1.04); box-shadow: 0 0 12px rgba(171,71,188,0.5); }
 
     .pump .repair-ring {
       display: none; position: absolute; bottom: 4px; left: 50%;
@@ -187,6 +189,10 @@
     @keyframes pulse-red {
       0%, 100% { box-shadow: 0 0 0 0 rgba(229,57,53,0.5); }
       50%       { box-shadow: 0 0 0 6px rgba(229,57,53,0);  }
+    }
+    @keyframes pulse-purple {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(171,71,188,0.55); }
+      50%       { box-shadow: 0 0 0 7px rgba(171,71,188,0);   }
     }
 
     .pump.no-resource { animation: shake 0.3s ease !important; }
@@ -815,7 +821,8 @@ function makePumpSVG(pumpState) {
     working:   { base: '#1b4d1f', pipe: '#2e7d32', handle: '#43a047', accent: '#388e3c' },
     broken:    { base: '#4a0000', pipe: '#7f0000', handle: '#c62828', accent: '#b71c1c' },
     repairing: { base: '#3e2800', pipe: '#6d4c00', handle: '#ffa000', accent: '#f57f17' },
-  }[pumpState];
+    community: { base: '#3a0063', pipe: '#6a0dad', handle: '#ab47bc', accent: '#9c27b0' },
+  }[pumpState] ?? { base: '#1b4d1f', pipe: '#2e7d32', handle: '#43a047', accent: '#388e3c' };
 
   const water = pumpState === 'working'
     ? `<ellipse class="water-drop"   cx="13" cy="44" rx="2.2" ry="3.2" fill="#4fc3f7"/>
@@ -826,6 +833,14 @@ function makePumpSVG(pumpState) {
     ? `<g transform="translate(33,2)">
          <line x1="0" y1="0" x2="10" y2="10" stroke="#ef5350" stroke-width="2.2" stroke-linecap="round"/>
          <line x1="10" y1="0" x2="0"  y2="10" stroke="#ef5350" stroke-width="2.2" stroke-linecap="round"/>
+       </g>`
+    : '';
+
+  // Community self-fix: wave/tilde symbol indicating minor instability being handled
+  const communityWave = pumpState === 'community'
+    ? `<g transform="translate(31,2)">
+         <path d="M1,4 Q4,1 7,4 Q10,7 13,4" stroke="#ce93d8" stroke-width="1.8" fill="none" stroke-linecap="round"/>
+         <path d="M1,9 Q4,6 7,9 Q10,12 13,9" stroke="#ce93d8" stroke-width="1.8" fill="none" stroke-linecap="round"/>
        </g>`
     : '';
 
@@ -849,6 +864,7 @@ function makePumpSVG(pumpState) {
     <rect x="6" y="28" width="18" height="5" rx="2.5" fill="${C.pipe}"/>
     ${water}
     ${brokenX}
+    ${communityWave}
     ${wrench}
   </svg>`;
 }
@@ -1072,6 +1088,10 @@ function updateDispatchButtons() {
 // ── PUMP CLICK ────────────────────────────────────────────────────────────────
 function handlePumpClick(id) {
   const pump = state.pumps[id];
+  if (pump.state === 'community') {
+    log(`🤝 ${PUMP_LOCATIONS[id].name} — community is handling this one`, 'info');
+    return;
+  }
   if (pump.state !== 'broken') return;
 
   const mech = getIdleMechanic();
@@ -1149,6 +1169,7 @@ function startGame(modeName) {
   clearTimeout(state.prevMaintTimer);
   clearTimeout(state.crisisTimer);
   clearTimeout(state.crisisBannerTimer);
+  clearTimeout(state.communityTimer);
 
   state = {
     mode:           modeName,
@@ -1171,6 +1192,7 @@ function startGame(modeName) {
     prevMaintTimer:    null,
     crisisTimer:       null,
     crisisBannerTimer: null,
+    communityTimer:    null,
   };
 
   for (let i = 0; i < TOTAL_PUMPS; i++) {
@@ -1239,7 +1261,13 @@ const REACTIVE_TOUR_STEPS = [
   {
     target: '#play-area',
     title:  'The pump map',
-    body:   '🟢 <strong>Green</strong> = working fine.<br>🔴 <strong>Red</strong> = broken — people have no water. <strong>Click a red pump to repair it.</strong> A mechanic will walk over from the workshop and fix it in 4 days, using 1 spare part.<br>🟡 <strong>Yellow</strong> = repair underway.',
+    body:   '🟢 <strong>Green</strong> = working fine.<br>🔴 <strong>Red</strong> = broken — people have no water. <strong>Click a red pump to repair it.</strong> A mechanic will walk over from the workshop and fix it in 4 days, using 1 spare part.<br>🟡 <strong>Yellow</strong> = repair underway.<br>🟣 <strong>Purple</strong> = community handling it — see next.',
+    place:  'above',
+  },
+  {
+    target: '#play-area',
+    title:  'Purple pumps — community self-repair',
+    body:   'Sometimes a pump briefly turns <strong>purple</strong>. This means local community members have spotted a minor issue and are fixing it themselves — patching a seal, replacing a washer, or pooling a small fee to buy a part.<br><br>You don\'t need to click it. It will resolve on its own in a few seconds. <strong>Communities have real capacity</strong> — they just can\'t sustain a whole network without systematic support.',
     place:  'above',
   },
   {
@@ -1303,7 +1331,8 @@ function beginGameLoop() {
   if (cfg.autoMoney) scheduleAutoMoney();
   if (cfg.autoParts) scheduleAutoParts();
   if (isPro)         schedulePreventiveMaintenance();
-  if (cfg.crises)    scheduleCrisisEvent();
+  if (cfg.crises)             scheduleCrisisEvent();
+  if (state.mode === 'reactive') scheduleCommunityFix();
 }
 
 function dismissIntro() {
@@ -1504,6 +1533,39 @@ function schedulePreventiveMaintenance() {
   }, delay);
 }
 
+// ── COMMUNITY SELF-REPAIR ─────────────────────────────────────────────────────
+const COMMUNITY_RESOLVE_MSGS = [
+  'community members patched the seal with locally-sourced materials',
+  'pump committee member tightened the handle bolt — it\'s holding',
+  'women\'s group pooled small fees to replace a worn washer',
+  'village welder fabricated a bracket from scrap metal',
+  'harvest cooperative fund covered an emergency O-ring',
+  'a trained local fixed the plunger rod — no mechanic needed this time',
+  'youth group organised and cleared a blocked spout',
+  'homestead nearby donated a spare part from their own store',
+  'community garden revenue bought a replacement seal',
+  'local apprentice made a temporary fix — water flowing again',
+];
+
+function scheduleCommunityFix() {
+  const delay = 22000 + Math.random() * 18000; // every ~22–40 real seconds
+  state.communityTimer = setTimeout(() => {
+    if (state.timeLeft <= 0) return;
+    triggerCommunityFix();
+    scheduleCommunityFix();
+  }, delay);
+}
+
+function triggerCommunityFix() {
+  const candidates = state.pumps.filter(p => p.state === 'working');
+  if (candidates.length === 0) return;
+  const pump = candidates[Math.floor(Math.random() * candidates.length)];
+  pump.state       = 'community';
+  pump.communityEnd = Date.now() + 4000 + Math.random() * 5000; // 4–9 seconds
+  renderPump(pump);
+  log(`⚠ ${PUMP_LOCATIONS[pump.id].name} — minor issue spotted`, 'warn');
+}
+
 function breakRandomPump() {
   const candidates = state.pumps.filter(p => p.state === 'working');
   if (candidates.length === 0) return;
@@ -1548,6 +1610,17 @@ function gameTick(dtMs) {
       floatText(rc.x, rc.y - 18, `+${state.cfg.peoplePerPump} 💧`, '#69f0ae', '0.82rem');
     }
     renderPump(pump);
+  });
+
+  // Resolve community self-fixes whose timer has expired
+  state.pumps.forEach(pump => {
+    if (pump.state !== 'community' || Date.now() < pump.communityEnd) return;
+    pump.state = 'working';
+    const msg = COMMUNITY_RESOLVE_MSGS[Math.floor(Math.random() * COMMUNITY_RESOLVE_MSGS.length)];
+    log(`🤝 ${PUMP_LOCATIONS[pump.id].name} — ${msg}`, 'good');
+    renderPump(pump);
+    const rc = getPumpCenter(pump.id);
+    floatText(rc.x, rc.y - 18, '🤝 handled', '#ce93d8', '0.75rem');
   });
 
   // Accumulate downtime for every pump currently broken
@@ -1642,6 +1715,7 @@ function endGame() {
   clearTimeout(state.prevMaintTimer);
   clearTimeout(state.crisisTimer);
   clearTimeout(state.crisisBannerTimer);
+  clearTimeout(state.communityTimer);
 
   // Count remaining downtime for pumps still broken at the whistle
   state.pumps.forEach(pump => {
