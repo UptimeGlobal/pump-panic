@@ -375,6 +375,7 @@
     .intro-card {
       background: #1a2535; border: 1px solid #2e4057; border-radius: 14px;
       padding: 22px 24px; max-width: 440px; width: 100%;
+      max-height: 90vh; overflow-y: auto;
       box-shadow: 0 8px 40px rgba(0,0,0,0.65);
     }
     .intro-card h2 { font-size: 1.1rem; color: #ef5350; font-weight: 800; margin-bottom: 3px; }
@@ -441,6 +442,7 @@
     .tour-dots { display: flex; gap: 5px; flex: 1; justify-content: center; }
     .tour-dot  { width: 6px; height: 6px; border-radius: 50%; background: #2e4057; transition: background 0.2s; }
     .tour-dot.active { background: #ef5350; }
+    #tour-overlay.pro .tour-dot.active { background: #66bb6a; }
     .tour-dot.done   { background: #546e7a; }
 
     .tour-skip {
@@ -989,7 +991,8 @@ function repositionIdleMechanics(returningId = null) {
       const idx = idle.indexOf(mech);
       moveTo(mech.el, startX + idx * spread, depot.y - 10);
       mech.el.classList.remove('on-mission');
-      mech.wanderLabel = null;
+      mech.wanderLabel  = null;
+      mech.wanderPumpId = null;
     }
     return;
   }
@@ -997,7 +1000,8 @@ function repositionIdleMechanics(returningId = null) {
   idle.forEach((m, i) => {
     moveTo(m.el, startX + i * spread, depot.y - 10);
     m.el.classList.remove('on-mission');
-    m.wanderLabel = null;
+    m.wanderLabel  = null;
+    m.wanderPumpId = null;
   });
 }
 
@@ -1236,13 +1240,8 @@ function startGame(modeName) {
   log(`Game started — ${cfg.label}`, 'info');
   showScreen('game-screen');
 
-  if (modeName === 'reactive') {
-    // Two rAF frames so the game screen has fully painted before we measure elements
-    requestAnimationFrame(() => requestAnimationFrame(() => showTour()));
-  } else {
-    document.getElementById('intro-content').innerHTML = buildIntroHTML();
-    document.getElementById('intro-overlay').classList.add('visible');
-  }
+  // Two rAF frames so the game screen has fully painted before we measure elements
+  requestAnimationFrame(() => requestAnimationFrame(() => showTour()));
 }
 
 const REACTIVE_TOUR_STEPS = [
@@ -1284,19 +1283,80 @@ const REACTIVE_TOUR_STEPS = [
   },
 ];
 
+const PRO_TOUR_STEPS = [
+  {
+    target: '.stats-row',
+    title:  'Your scoreboard',
+    body:   '<strong>Days Left</strong> counts down from 60. <strong>Without Water</strong> shows how many people currently have no working pump. <strong>Budget</strong> is your money — the contract keeps it topped up automatically. <strong>Pump-Days Lost</strong> is your final score, keep it low.',
+    place:  'below',
+  },
+  {
+    target: '.resource-row',
+    title:  'Your supplies',
+    body:   '<strong>Mechanics Free</strong> 👷 — you start with 4. Each repair ties one up for 2 days. <strong>Spare Parts</strong> 🔧 — every repair uses one. Parts are delivered automatically every 10 days, so you rarely run short.',
+    place:  'below',
+  },
+  {
+    target: '#play-area',
+    title:  'The pump map',
+    body:   '🟢 <strong>Green</strong> = working fine.<br>🔴 <strong>Red</strong> = broken — people have no water. <strong>Click a red pump to repair it.</strong> A mechanic walks over and fixes it in 2 days, using 1 spare part.<br>🟡 <strong>Yellow</strong> = repair underway — watch the progress bar.<br><br>You\'ll also see mechanics 🔍 moving around inspecting pumps — that\'s preventive maintenance keeping the break rate low.',
+    place:  'above',
+  },
+  {
+    target: '#dispatch-panel',
+    title:  'Express parts order',
+    body:   'This is your only manual dispatch button. If parts are running low and you can\'t wait for the next scheduled delivery, send a mechanic on an express run — costs $60, back in 2–3 days with +3 parts.<br><br>Funding and standard deliveries happen <strong>automatically</strong> — no action needed from you.',
+    place:  'above',
+  },
+  {
+    target: null,
+    title:  '✓ The contract works for you',
+    body:   'Unlike Reactive mode, you\'re not scrambling for resources:<br><br>💳 <strong>Contract payment: +$80</strong> lands automatically every 12 days<br>🚚 <strong>Parts delivery: +3</strong> arrives every 10 days (−$60 from budget)<br><br>Your job is simple — <strong>click broken pumps before too many people lose water</strong>. The system handles the rest. Good luck.',
+    place:  'center',
+  },
+];
+
 function buildIntroHTML() {
   return `
     <h2 style="color:#66bb6a">✓ Professional Mode</h2>
     <p class="intro-sub">12 pumps · 60 days · a managed service contract. Here's how it works:</p>
     <div class="intro-section">
+      <div class="intro-section-title">Your scoreboard</div>
       <div class="intro-row">
-        <span class="intro-icon">🔴</span>
-        <div><strong>When a pump turns red — click it to repair</strong><br>
-          A free mechanic will head over. Repairs are faster and parts are restocked automatically.</div>
+        <span class="intro-icon">📊</span>
+        <div>
+          <strong>Days Left</strong> counts down from 60. &nbsp;<strong>Without Water</strong> shows people with no working pump right now. &nbsp;<strong>Budget</strong> is your money — the contract keeps it topped up. &nbsp;<strong>Pump-Days Lost</strong> is your final score — keep it low.
+        </div>
       </div>
     </div>
     <div class="intro-section">
-      <div class="intro-section-title">Everything runs on a contract — no scrambling for resources</div>
+      <div class="intro-section-title">Reading the map</div>
+      <div class="intro-row">
+        <span class="intro-icon">🟢</span>
+        <div><strong>Green</strong> = working fine.</div>
+      </div>
+      <div class="intro-row" style="margin-top:6px">
+        <span class="intro-icon">🔴</span>
+        <div><strong>Red = broken — click it to dispatch a repair.</strong> A free mechanic walks over and fixes it in 2 days, using 1 spare part.</div>
+      </div>
+      <div class="intro-row" style="margin-top:6px">
+        <span class="intro-icon">🟡</span>
+        <div><strong>Yellow</strong> = repair underway. Watch the progress bar.</div>
+      </div>
+    </div>
+    <div class="intro-section">
+      <div class="intro-section-title">Your supplies (top-left boxes)</div>
+      <div class="intro-row">
+        <span class="intro-icon">👷</span>
+        <div><strong>Mechanics Free</strong> — how many workers are available. You start with 4. Each repair ties one up for 2 days.</div>
+      </div>
+      <div class="intro-row" style="margin-top:6px">
+        <span class="intro-icon">🔧</span>
+        <div><strong>Spare Parts</strong> — each repair uses one. Deliveries arrive automatically, so you won't run dry unless multiple pumps break at once.</div>
+      </div>
+    </div>
+    <div class="intro-section">
+      <div class="intro-section-title">Contract keeps resources flowing — no scrambling needed</div>
       <div class="intro-btn-row">
         <span class="intro-icon">💳</span>
         <div><strong>Funding arrives automatically</strong> <span class="intro-tag free">every 12 days</span><br>
@@ -1341,15 +1401,21 @@ function dismissIntro() {
   beginGameLoop();
 }
 
+function getTourSteps() {
+  return state.mode === 'pro' ? PRO_TOUR_STEPS : REACTIVE_TOUR_STEPS;
+}
+
 function showTour() {
   state.tourStep = 0;
-  document.getElementById('tour-overlay').classList.add('active');
+  const overlay = document.getElementById('tour-overlay');
+  overlay.classList.add('active');
+  overlay.classList.toggle('pro', state.mode === 'pro');
   _renderTourStep(0);
 }
 
 function tutorialNext() {
   const next = state.tourStep + 1;
-  if (next >= REACTIVE_TOUR_STEPS.length) { dismissIntro(); return; }
+  if (next >= getTourSteps().length) { dismissIntro(); return; }
   state.tourStep = next;
   _renderTourStep(next);
 }
@@ -1362,12 +1428,15 @@ function tutorialBack() {
 }
 
 function _renderTourStep(i) {
-  const total  = REACTIVE_TOUR_STEPS.length;
-  const step   = REACTIVE_TOUR_STEPS[i];
+  const steps  = getTourSteps();
+  const total  = steps.length;
+  const step   = steps[i];
   const isLast = i === total - 1;
 
   document.getElementById('tour-step-label').textContent = `Step ${i + 1} of ${total}`;
-  document.getElementById('tour-title').textContent      = step.title;
+  const titleEl = document.getElementById('tour-title');
+  titleEl.textContent = step.title;
+  titleEl.style.color = state.mode === 'pro' ? '#66bb6a' : '#ef5350';
   document.getElementById('tour-body').innerHTML         = step.body;
 
   document.getElementById('tour-dots').innerHTML = Array.from({length: total}, (_, idx) =>
@@ -1527,7 +1596,8 @@ function schedulePreventiveMaintenance() {
       const pump = working[Math.floor(Math.random() * working.length)];
       const c    = getPumpCenter(pump.id);
       moveTo(mech.el, c.x, c.y - 10);
-      mech.wanderLabel = '🔍';
+      mech.wanderLabel  = '🔍';
+      mech.wanderPumpId = pump.id;
     }
     schedulePreventiveMaintenance();
   }, delay);
@@ -1567,7 +1637,8 @@ function triggerCommunityFix() {
 }
 
 function breakRandomPump() {
-  const candidates = state.pumps.filter(p => p.state === 'working');
+  const inspectedIds = new Set(state.mechList.map(m => m.wanderPumpId).filter(id => id !== null && id !== undefined));
+  const candidates = state.pumps.filter(p => p.state === 'working' && !inspectedIds.has(p.id));
   if (candidates.length === 0) return;
   const pump       = candidates[Math.floor(Math.random() * candidates.length)];
   pump.state       = 'broken';
